@@ -117,7 +117,6 @@
 							row[i-1]=obj.toString();		
 					}
 					ret.add(row);
-					log.debug("add a row");
 				}
 				rs.close();
 				rs=null;				
