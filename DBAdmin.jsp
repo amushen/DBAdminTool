@@ -11,6 +11,9 @@
 	
 	final String MSSQLDBDriver="com.microsoft.jdbc.sqlserver.SQLServerDriver";
 	final String MSSQLDBURL="jdbc:sqlserver://<<SERVERIP>>";
+	
+	final String OracleDriver="oracle.jdbc.driver.OracleDriver";
+	final String OracleURL="jdbc:oracle:thin:@<<SERVERIP>>";
 
 	final int MAX_ROWS=100;	//max rows in query result
 %><%
@@ -250,12 +253,53 @@
 		
 	 }
 	
+	/**
+	 * oracle localhost:1521
+	 */
+	  class OracleDBUtil extends BaseDBUtil{
+	 
+		 public Connection getConnection(String user,String password,String serverIP,String dbname){
+			if(serverIP==null||serverIP.length()<1) serverIP="localhost";
+			if(dbname==null||dbname.length()<1)dbname="";
+			
+			String url=OracleURL.replace("<<SERVERIP>>",serverIP);
+			if(dbname.length()>0){
+				url=url+":"+dbname;
+			}
+			log.debug(url);
+			conn=null;
+			try{
+				conn=getConn(user,password,url,OracleDriver);
+			}catch(Exception e){
+				log.warn(e.getMessage());
+				request.setAttribute("message",e.getMessage());
+			}
+			return conn;
+		}	 
+		
+		
+		public List<String[]> listTables(String dbname){
+			execute("select table_name from all_tables");
+			return getResultTable();
+		}
+		
+		
+		public List<String[]> listDatabases(){		
+			execute("select name from v$database");
+			return getResultTable();
+		}
+		
+	 }
+	 
+	
 	
 	//initial database util object	
 	BaseDBUtil db=null;
 	String dbtype=request.getParameter("hDbType");
 	if("MSSQL".equals(dbtype)){
 		db=new MSSQLDBUtil();
+	}else if("Oracle".equals(dbtype)){
+		db=new OracleDBUtil();	
 	}else{
 		db=new MYSQLDBUtil();
 	}
@@ -415,7 +459,12 @@ border-collapse:collapse;
 	if(user==null){
 %>
 	<table id='loginTable'>
-	<tr><td align="right">Database</td><td><select id="dbtype" name="dbtype"><option value="MYSQL">MYSQL</option><option value="MSSQL">MSSQL</option></select></td></tr>
+	<tr><td align="right">Database</td><td>
+		<select id="dbtype" name="dbtype">
+			<option value="MYSQL">MYSQL</option>
+			<option value="MSSQL">MSSQL</option>
+			<option value="Oracle">Oracle</option>
+		</select></td></tr>
 	<tr><td align=right>Server IP</td><td align=left><input id="serverIP" type=text name='serverIP' value="localhost" /></td></tr>
 	<tr><td align=right>DB User</td><td align=left><input type=text name='dbuser' value="root" /></td></tr>
 	<tr><td align=right>Password</td><td align=left><input type=password name='password' /></td></tr>
