@@ -11,6 +11,7 @@ It's very simple and powerful.<br>
 If you feel this software is good, please let me know.<br>
 Your support is the force to drive it better.<br>
 <br>
+Some Databases' JDBC Driver download <a href='http://www.drivehq.com/web/amushen/drivers.htm'>here</a><br />
 <br>
 Author: shennan<br>
 Email: amushen@gmail.com<br>
