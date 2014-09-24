@@ -7,9 +7,10 @@
  * 
  */
 	final String MySQLDBDriver="org.gjt.mm.mysql.Driver";
-	final String MySQLDBURL="jdbc:mysql://localhost:3306/";	
-
-	final String DefaultDB="MySQL";// or MSSSQL
+	final String MySQLDBURL="jdbc:mysql://<<SERVERIP>>/<<DBNAME>>";	
+	
+	final String MSSQLDBDriver="com.microsoft.jdbc.sqlserver.SQLServerDriver";
+	final String MSSQLDBURL="jdbc:sqlserver://<<SERVERIP>>";
 
 	final int MAX_ROWS=100;	//max rows in query result
 %><%
@@ -17,8 +18,7 @@
 	
 	String user;	//db user saved into session
 	String password;//db password saved into session
-	
-	String dbname;
+
 	String message;//for show message
 
 //gloab class define
@@ -42,18 +42,18 @@
 		protected Connection conn;		
 		protected ResultSet rs;
 		protected int updateCount;
-		protected String dbname="";
 
 		/**
 		 * commone getConnection logic
 		 */		
-		protected Connection getConnection(String user,String password,String url,String driver){			
+		protected Connection getConn(String user,String password,String url,String driver){			
 			if(conn!=null)return conn;
 			try{
 				Class.forName(driver).newInstance();
-				conn=DriverManager.getConnection(url);
+				conn=DriverManager.getConnection(url,user,password);
 			}catch(Exception e){
 				log.warn(e.getMessage());
+				e.printStackTrace();
 				request.setAttribute("message",e.getMessage());
 			}
 			return conn;
@@ -169,17 +169,19 @@
 				}
 			}
 		}
-		
-		public void setDBName(String dbname){
-			this.dbname=dbname;
+		public List<String[]> listTables(String dbname){
+			execute("select table_name from information_schema.tables where TABLE_SCHEMA='"+dbname+"';");
+			return getResultTable();
 		}
 		
-		public abstract Connection getConnection(String user,String password);
+		public List<String[]> listDatabases(){		
+			execute("select distinct schema_name from information_schema.SCHEMATA;");
+			return getResultTable();
+		}
 		
-		public abstract List<String[]> listTables();
 		
-		public abstract List<String[]> listDatabases();
 		
+		public abstract Connection getConnection(String user,String password,String serverIP,String dbname);
 		
 	}
 	
@@ -188,59 +190,82 @@
 	/**
 	 * MySql DBUtil
 	 */
-	class MySqlDBUtil extends BaseDBUtil{
+	class MYSQLDBUtil extends BaseDBUtil{
 		
-		public Connection getConnection(String user,String password){
-			String url=MySQLDBURL+dbname+"?user="+user+"&password="+password+"&characterEncoding=utf-8";
+		public Connection getConnection(String user,String password,String serverIP,String dbname){
+			if(serverIP==null||serverIP.length()<1) serverIP="localhost";
+			if(dbname==null||dbname.length()<1 || "null".equals(dbname))dbname="";
+			
+			String url=MySQLDBURL.replace("<<SERVERIP>>",serverIP);
+			url=url.replace("<<DBNAME>>",dbname);
+			url=url+"?characterEncoding=utf-8";
 			conn=null;
 			try{
-				conn=getConnection(user,password,url,MySQLDBDriver);
+				conn=getConn(user,password,url,MySQLDBDriver);
 			}catch(Exception e){
 				log.warn(e.getMessage());
 				request.setAttribute("message",e.getMessage());
 			}
 			return conn;
 		}
-		
-		public List<String[]> listTables(){
-			execute("show tables");
-			return getResultTable();
-		}
-		
-		public List<String[]> listDatabases(){
-			execute("show databases");
-			return getResultTable();
-		}
 	}
 	
 	
-	//TODO other database support
+	/**
+	 * for mssql db
+	 */
+	 
+	 class MSSQLDBUtil extends BaseDBUtil{
+	 
+		 public Connection getConnection(String user,String password,String serverIP,String dbname){
+			if(serverIP==null||serverIP.length()<1) serverIP="localhost";
+			if(dbname==null||dbname.length()<1)dbname="";
+			
+			String url=MSSQLDBURL.replace("<<SERVERIP>>",serverIP);
+			if(dbname.length()>0){
+				url=url+";databasename="+dbname;
+			}
+			log.debug(url);
+			conn=null;
+			try{
+				conn=getConn(user,password,url,MSSQLDBDriver);
+			}catch(Exception e){
+				log.warn(e.getMessage());
+				request.setAttribute("message",e.getMessage());
+			}
+			return conn;
+		}	 
+		
+		
+		public List<String[]> listTables(String dbname){
+			execute("select name from sysobjects where xtype='U';");
+			return getResultTable();
+		}
+		
+		
+		public List<String[]> listDatabases(){		
+			execute("select Name from master..sysdatabases");
+			return getResultTable();
+		}
+		
+	 }
 	
 	
 	//initial database util object	
 	BaseDBUtil db=null;
-	if("MySQL".equals(DefaultDB)){
-		db=new MySqlDBUtil();
-	}else if("MSSQL".equals(DefaultDB)){
-		request.setAttribute("message","MSSQL database not support by now.");
+	String dbtype=request.getParameter("hDbType");
+	if("MSSQL".equals(dbtype)){
+		db=new MSSQLDBUtil();
 	}else{
-		request.setAttribute("message","database type error.");
+		db=new MYSQLDBUtil();
 	}
 	
 	//get user from session
 	user=(String)session.getAttribute("DBUser");
 	password=(String)session.getAttribute("DBPassword");
-	
-	//get dbname
-	dbname=request.getParameter("dbname");
-	if(dbname!=null){
-		db.setDBName(dbname);
-	}else{
-		dbname="";
-	}
-	
+
 	if(user!=null&&user.length()>0){
-		db.getConnection(user,password);
+		db.getConnection(user,password,request.getParameter("hServerIP"),request.getParameter("dbname"));
 	}
 	
 	if(db==null){
@@ -294,7 +319,10 @@ border-collapse:collapse;
 	}
 	
 	function doLogin(){
-		$("cmd").value="login";
+		$("cmd").value="login";		
+		$("hServerIP").value=$("serverIP").value;
+		$("hDbType").value=$("dbtype").value;
+		$("dbname").value="";
 		$("form1").submit();
 	}
 	
@@ -362,7 +390,7 @@ border-collapse:collapse;
 		String ruser=request.getParameter("dbuser");
 		String rpassword=request.getParameter("password");
 		
-		if(db.getConnection(ruser,rpassword)==null){
+		if(db.getConnection(ruser,rpassword,request.getParameter("hServerIP"),request.getParameter("dbname"))==null){
 			//login failed.
 			request.setAttribute("message","Login Failed.");
 			
@@ -379,13 +407,17 @@ border-collapse:collapse;
 		session.removeAttribute("DBPassword");
 		user=null;
 		password=null;
+		request.removeAttribute("message");
 	}
 
 	
  
 	if(user==null){
 %>
-	<table id='loginTable'><tr><td align=right>DB User</td><td align=left><input type=text name='dbuser' /></td></tr>
+	<table id='loginTable'>
+	<tr><td align="right">Database</td><td><select id="dbtype" name="dbtype"><option value="MYSQL">MYSQL</option><option value="MSSQL">MSSQL</option></select></td></tr>
+	<tr><td align=right>Server IP</td><td align=left><input id="serverIP" type=text name='serverIP' value="localhost" /></td></tr>
+	<tr><td align=right>DB User</td><td align=left><input type=text name='dbuser' value="root" /></td></tr>
 	<tr><td align=right>Password</td><td align=left><input type=password name='password' /></td></tr>
 	<tr><td colspan=2 align=center><input type=button class="button" onclick='doLogin()' value='Login' /></td></tr></table>
 <%
@@ -394,8 +426,10 @@ border-collapse:collapse;
 		out.println("<div id='message'>"+message+"</div>");
 	}
 	}else{
+	
+	
 		List<String[]> dbs=db.listDatabases();
-		List<String[]> tables=db.listTables();
+		List<String[]> tables=db.listTables(request.getParameter("dbname"));
 		log.debug("dbs:"+dbs.size());
 		log.debug("tables:"+tables.size());
 	
@@ -403,7 +437,7 @@ border-collapse:collapse;
 <table id="header" width="100%" border="0" bgColor="#aaaaff" style="color:white">
 	<tr height="25">
 		<td align="left" style="font-size:25px;"><b>DB Admin Tool</b></td>
-		<td align="right">Current User:<%=user%>&nbsp;&nbsp;			
+		<td align="right"><%=user%>@<%=request.getParameter("hServerIP")%>&nbsp;&nbsp;			
 			<a href='javascript:logout()' style='color:white'>Logout</a>&nbsp;
 		</td>
 	</tr>		
@@ -415,6 +449,7 @@ border-collapse:collapse;
 		<table id="dbTable" border=0>
 			<%//show all databases;
 				if(dbs!=null&&dbs.size()>0){
+					String dbname=request.getParameter("dbname");
 					out.println("<h3>Databases</h3>");
 					for(int i=1;i<dbs.size();i++){
 						out.println("<tr><td><a href='javascript:selectDB(\""+dbs.get(i)[0]+"\")'>");
@@ -443,14 +478,16 @@ border-collapse:collapse;
 	<td>
 		Please input sql:<br />
 		<textarea style="width:99%" rows="10" id="sql" name="sql" onkeyup="doKeyup(event)" ><%
+			
 			String sql=request.getParameter("encodeSql");
+			if(sql==null)sql="";
 			try{
 				sql=java.net.URLDecoder.decode(sql,"utf-8");
 			}catch(Exception e){}
 			if(sql!=null && sql.trim().length()>0){
-				out.print(sql);
 				if("execute".equals(cmd)){
-					db.execute(sql);	
+					db.execute(sql);
+					out.print(sql);
 				}
 			}
 		%></textarea><input type="button" class="button" value="execute" onclick="doSubmit()" />&nbsp;(ctrl+Enter)<br />
@@ -513,7 +550,9 @@ border-collapse:collapse;
 </table>
 <input type="hidden" id="encodeSql" name="encodeSql" value="" />
 <input type="hidden" id="cmd" name="cmd" value="" />
-<input type="hidden" id="dbname" name="dbname" value="<%=dbname%>" />
+<input type="hidden" id="dbname" name="dbname" value="<%=request.getParameter("dbname")%>" />
+<input type="hidden" id="hServerIP" name="hServerIP" value="<%=request.getParameter("hServerIP")%>" />
+<input type="hidden" id="hDbType" name="hDbType" value="<%=request.getParameter("hDbType")%>" />
 </form>
 </body>
 <style>
